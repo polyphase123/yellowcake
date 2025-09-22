@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Uranium Fuel Cycle Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- LeafletJS for Maps -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <!-- Chart.js for Charts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            scroll-behavior: smooth;
+        }
+        .card {
+            background-color: white;
+            border: 1px solid #e5e7eb;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            animation: fadeIn 0.5s ease-in-out;
+            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        }
+        .card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -2px rgb(0 0 0 / 0.1);
+        }
+        .btn {
+            transition: background-color 0.3s ease, transform 0.1s ease, opacity 0.3s ease;
+        }
+        .btn:active {
+            transform: scale(0.98);
+        }
+        .btn-primary { background-color: #f59e0b; color: white; } /* amber-500 */
+        .btn-primary:hover { background-color: #fbbf24; } /* amber-400 */
+        .btn-secondary { background-color: #6b7280; color: white; } /* gray-500 */
+        .btn-secondary:hover { background-color: #4b5563; } /* gray-600 */
+        .btn-danger { background-color: #dc2626; color: white; }
+        .btn-danger:hover { background-color: #b91c1c; }
+        .btn:disabled, .btn-disabled { background-color: #9ca3af; cursor: not-allowed; opacity: 0.6; }
+        .info-btn {
+            background-color: #e5e7eb; color: #4b5563;
+            border-radius: 50%; width: 24px; height: 24px;
+            font-weight: bold; font-family: serif;
+            display: inline-flex; justify-content: center; align-items: center;
+            margin-left: 8px; cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .info-btn:hover { background-color: #d1d5db; }
+
+        /* Animations */
+        #fissionContainer { position: relative; height: 120px; background-color: #f9fafb; border-radius: 0.5rem; overflow: hidden; border: 1px solid #e5e7eb;}
+        .neutron, .fission-neutron { position: absolute; width: 8px; height: 8px; background-color: #3b82f6; border-radius: 50%; }
+        .neutron { top: 48%; left: -20px; transition: left 1s ease-in; }
+        .nucleus { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 30px; height: 30px; background-color: #ef4444; border-radius: 50%; transition: transform 0.2s ease-out, opacity 0.2s; }
+        .nucleus.impact { transform: translate(-50%, -50%) scale(1.2); }
+        .nucleus.fissioned { opacity: 0; }
+        .fragment { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 15px; height: 15px; background-color: #a855f7; border-radius: 50%; transition: all 1s ease-out; }
+        .energy-wave { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0); width: 80px; height: 80px; border: 2px solid #f59e0b; border-radius: 50%; opacity: 0; }
+        .energy-wave.expand { animation: expandWave 1s ease-out; }
+        
+        #centrifugeContainer { position: relative; width: 120px; height: 120px; margin: 0.5rem auto; border: 1px solid #e5e7eb; border-radius: 50%; background: #f9fafb; overflow: hidden; }
+        #centrifugeRotor {
+            width: 100%; height: 100%; border-radius: 50%;
+            border: 8px solid #9ca3af;
+            border-top-color: #f59e0b;
+            animation: spin 1s linear infinite;
+        }
+        .isotope-particle {
+            position: absolute; top: 50%; left: 50%;
+            width: 5px; height: 5px; border-radius: 50%;
+            transition: transform 1.5s ease-out;
+        }
+        .u235 { background-color: #10b981; } /* emerald-500 */
+        .u238 { background-color: #6b7280; } /* gray-500 */
+
+        .control-rod {
+            position: absolute; bottom: 0; width: 15%; height: 100%;
+            background-color: #4b5563; border-radius: 5px 5px 0 0;
+            border: 2px solid #1f2937;
+            transition: transform 1s ease-in-out;
+            transform-origin: bottom;
+        }
+        
+        .anim-container { background-color: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 0.5rem; padding: 1rem; position: relative; height: 120px; overflow: hidden;}
+        
+        #map { height: 400px; width: 100%; border-radius: 0.5rem; border: 1px solid #d1d5db; z-index: 0; }
+        
+        #infoModal, #eventModal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6);
+            display: flex; justify-content: center; align-items: center;
+            opacity: 0; visibility: hidden; transition: opacity 0.3s, visibility 0.3s;
+            z-index: 1000;
+        }
+        #infoModal.visible, #eventModal.visible { opacity: 1; visibility: visible; }
+        #modalContent, #eventModalContent {
+            background: white; color: #1f2937; padding: 2rem;
+            border-radius: 0.75rem; max-width: 500px; width: 90%;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            transform: scale(0.95); transition: transform 0.3s;
+        }
+        #infoModal.visible #modalContent, #eventModal.visible #eventModalContent { transform: scale(1); }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes expandWave { 0% { transform: translate(-50%,-50%) scale(0.1); opacity: 1; } 100% { transform: translate(-50%,-50%) scale(1.5); opacity: 0; } }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 p-4 lg:p-8">
+
+    <div class="w-full max-w-7xl mx-auto space-y-8">
+        <header class="text-center">
+            <h1 class="text-4xl font-bold text-amber-600">Advanced Uranium Fuel Cycle Simulator</h1>
+            <div class="flex justify-center items-center space-x-4 mt-4">
+                <p class="text-gray-600">An interactive model from ore to electricity.</p>
+                <button id="resetBtn" class="btn btn-secondary px-4 py-2 rounded-lg font-bold">Reset Simulation</button>
+            </div>
+        </header>
+        
+        <!-- Reactor Choice -->
+        <div class="card rounded-xl p-6">
+            <h3 class="text-xl font-bold mb-4 text-center">Choose Reactor Technology</h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="reactorChoice">
+                <div class="border border-gray-200 p-4 rounded-lg">
+                    <label class="flex items-center space-x-2 cursor-pointer font-semibold">
+                        <input type="radio" name="reactorType" value="LWR" checked class="accent-amber-500">
+                        <span>Light Water Reactor (LWR)</span>
+                    </label>
+                    <p class="text-xs text-gray-500 mt-1 pl-6">Requires Enriched Uranium. Used by USA (~93), France (~56), China (~55).</p>
+                </div>
+                <div class="border border-gray-200 p-4 rounded-lg">
+                    <label class="flex items-center space-x-2 cursor-pointer font-semibold">
+                        <input type="radio" name="reactorType" value="CANDU" class="accent-amber-500">
+                        <span>CANDU Reactor</span>
+                    </label>
+                     <p class="text-xs text-gray-500 mt-1 pl-6">Uses Natural Uranium (skips enrichment). Used by Canada (19), South Korea (4), Romania (2).</p>
+                </div>
+                <div class="border p-4 rounded-lg border-red-200 bg-red-50">
+                    <label class="flex items-center space-x-2 cursor-pointer font-semibold text-gray-900">
+                        <input type="radio" name="reactorType" value="RBMK" class="accent-amber-500">
+                        <span>RBMK Reactor</span>
+                    </label>
+                     <p class="text-xs text-gray-600 mt-1 pl-6">Requires Low-Enriched Uranium. Infamous for design flaws (Chernobyl). Formerly used by the Soviet Union; a few remain in Russia.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Process Flow -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
+            <!-- 1. Mining -->
+            <div class="card rounded-xl p-6 text-center h-full flex flex-col">
+                <h2 class="text-2xl font-semibold mb-2 flex items-center justify-center">1. Mining <button class="info-btn" data-info="mining">i</button></h2>
+                <div class="flex-grow">
+                    <label for="mineSlider" class="text-sm text-gray-500">Amount to mine: <span id="mineSliderValue" class="font-bold">100,000</span> tons</label>
+                    <input id="mineSlider" type="range" min="10000" max="300000" step="10000" value="100000" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer my-2">
+                    <button id="mineBtn" class="btn btn-primary w-full py-2 px-4 rounded-lg font-bold">Mine Ore</button>
+                    <p id="mineTime" class="text-xs text-indigo-500 font-semibold mt-1 h-4"></p>
+                </div>
+                <div class="bg-gray-50 mt-4 p-4 rounded-lg">
+                    <p class="font-medium">Uranium Ore Stockpile</p>
+                    <p id="oreAmount" class="text-2xl font-bold text-amber-600">0 tons</p>
+                </div>
+            </div>
+            <!-- 2. Milling -->
+            <div class="card rounded-xl p-6 text-center h-full flex flex-col">
+                <h2 class="text-2xl font-semibold mb-2 flex items-center justify-center">2. Milling <button class="info-btn" data-info="milling">i</button></h2>
+                <div class="flex-grow">
+                    <p class="text-gray-500 mb-4 text-sm">Produce yellowcake (U₃O₈).</p>
+                    <button id="millBtn" class="btn btn-primary w-full py-2 px-4 rounded-lg font-bold">Process All Ore</button>
+                    <p id="millTime" class="text-xs text-indigo-500 font-semibold mt-1 h-4"></p>
+                </div>
+                <div class="bg-gray-50 mt-4 p-4 rounded-lg">
+                    <p class="font-medium">Yellowcake (U₃O₈)</p>
+                    <p id="yellowcakeAmount" class="text-2xl font-bold text-amber-600">0 tons</p>
+                </div>
+            </div>
+            <!-- 3. Conversion -->
+            <div class="card rounded-xl p-6 text-center h-full flex flex-col">
+                <h2 class="text-2xl font-semibold mb-2 flex items-center justify-center">3. Conversion <button class="info-btn" data-info="conversion">i</button></h2>
+                 <div class="flex-grow">
+                    <p class="text-gray-500 mb-4 text-sm">Convert to UF₆ gas.</p>
+                    <button id="convertBtn" class="btn btn-primary w-full py-2 px-4 rounded-lg font-bold">Convert All YC</button>
+                    <p id="convertTime" class="text-xs text-indigo-500 font-semibold mt-1 h-4"></p>
+                </div>
+                <div class="bg-gray-50 mt-4 p-4 rounded-lg">
+                    <p class="font-medium">Natural UF₆ Gas</p>
+                    <p id="uf6Amount" class="text-2xl font-bold text-amber-600">0.00 tons</p>
+                </div>
+            </div>
+            <!-- 4. Enrichment -->
+            <div id="enrichmentCard" class="card rounded-xl p-6 text-center h-full flex flex-col">
+                <h2 class="text-2xl font-semibold flex items-center justify-center">4. Enrichment <button class="info-btn" data-info="enrichment">i</button></h2>
+                <div class="flex-grow">
+                    <p class="text-gray-500 mb-2 text-sm">Separate isotopes.</p>
+                    <div id="centrifugeContainer">
+                        <div id="centrifugeRotor" style="display: none;"></div>
+                    </div>
+                    <button id="enrichBtn" class="btn btn-primary w-full py-2 px-4 rounded-lg font-bold">Enrich All UF₆ Gas</button>
+                    <p id="enrichTime" class="text-xs text-indigo-500 font-semibold mt-1 h-4"></p>
+                </div>
+            </div>
+             <!-- 5. Fuel Fabrication -->
+            <div class="card rounded-xl p-6 text-center h-full flex flex-col">
+                <h2 class="text-2xl font-semibold flex items-center justify-center">5. Fabrication <button class="info-btn" data-info="fabrication">i</button></h2>
+                <div class="flex-grow">
+                    <p class="text-gray-500 mb-4 text-sm">Create fuel assemblies.</p>
+                    <button id="fabricateBtn" class="btn btn-primary w-full py-2 mt-3 rounded-lg font-bold">Fabricate Fuel</button>
+                     <p id="fabricateTime" class="text-xs text-indigo-500 font-semibold mt-1 h-4"></p>
+                </div>
+                <div class="bg-gray-50 mt-4 p-4 rounded-lg">
+                    <p class="font-medium">Fabricated Fuel</p>
+                    <p id="fabricatedFuelAmount" class="text-2xl font-bold text-amber-600">0.00 tons</p>
+                </div>
+            </div>
+            <!-- 6. Power Generation -->
+            <div class="card rounded-xl p-6 text-center h-full flex flex-col">
+                <h2 class="text-2xl font-semibold flex items-center justify-center">6. Power Generation <button class="info-btn" data-info="fission">i</button></h2>
+                <div class="flex-grow">
+                     <div id="fissionContainer"></div>
+                    <button id="fissionBtn" class="btn btn-primary w-full py-2 mt-3 rounded-lg font-bold">Load Fuel & Start</button>
+                    <p id="reactorMessage" class="text-xs text-red-500 font-semibold mt-1 h-4"></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Production Summary -->
+        <div class="card rounded-xl p-6">
+            <h3 class="text-xl font-bold mb-4 text-center">Simulation Summary</h3>
+            <div id="summaryContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                <div id="summaryContent" class="text-sm space-y-2">
+                    <p class="text-center text-gray-500">No production yet. Start by mining ore.</p>
+                </div>
+                <div class="relative h-64">
+                    <canvas id="summaryChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Products & Power Section -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="card lg:col-span-2 rounded-xl p-6">
+                 <h3 class="text-xl font-bold mb-4 text-center flex items-center justify-center">Product Stockpiles <button class="info-btn" data-info="stockpiles">i</button></h3>
+                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="bg-gray-50 p-4 rounded-lg text-center">
+                        <h4 class="font-semibold text-lg text-green-600">Enriched/Natural Fuel Material</h4>
+                        <p id="enrichedAmount" class="text-3xl font-bold text-green-500 mt-2">0.00 tons</p>
+                    </div>
+                    <div class="bg-gray-50 p-4 rounded-lg text-center">
+                        <h4 class="font-semibold text-lg text-amber-600">Depleted Uranium (Tails)</h4>
+                        <p id="depletedAmount" class="text-3xl font-bold text-amber-500 mt-2">0.00 tons</p>
+                    </div>
+                    <div class="bg-gray-50 p-4 rounded-lg text-center md:col-span-2">
+                         <h4 class="font-semibold text-lg text-purple-600">Spent Fuel</h4>
+                         <p id="spentFuelAmount" class="text-3xl font-bold text-purple-500 mt-2">0.00 tons</p>
+                    </div>
+                 </div>
+            </div>
+            <div class="card rounded-xl p-6 text-center">
+                <h3 class="text-xl font-bold mb-2">Reactor Controls</h3>
+                 <div class="text-center space-y-3">
+                     <div class="relative my-2 anim-container !h-[120px]">
+                        <div id="rod1" class="control-rod" style="left: 10%;"></div>
+                        <div id="rod2" class="control-rod" style="left: 42.5%;"></div>
+                        <div id="rod3" class="control-rod" style="left: 75%;"></div>
+                    </div>
+                    <div>
+                        <p class="font-medium">Control Rods</p>
+                        <div class="flex justify-center space-x-2 mt-1">
+                            <button id="withdrawRodsBtn" class="btn btn-primary px-3 py-1 text-sm">Withdraw</button>
+                            <button id="insertRodsBtn" class="btn btn-secondary px-3 py-1 text-sm">Insert</button>
+                        </div>
+                        <p class="text-xs mt-1">Position: <span id="rodPositionDisplay" class="font-bold">0%</span> Withdrawn</p>
+                    </div>
+                     <div class="border-t border-gray-200 pt-3"><p class="font-medium">Power Output</p><div class="w-full bg-gray-200 rounded-full h-4 my-1"><div id="powerLevelBar" class="bg-green-500 h-4 rounded-full" style="width: 0%;"></div></div><p id="powerOutputDisplay" class="font-bold text-lg">0 MW</p></div>
+                     <div class="border-t border-gray-200 pt-3"><p class="font-medium">Status</p><p id="reactorStatusDisplay" class="font-bold text-blue-600">Shutdown</p></div>
+                 </div>
+            </div>
+        </div>
+        
+        <!-- Info Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+             <div class="card rounded-xl p-6 lg:col-span-2">
+                <h3 class="text-xl font-bold mb-4 flex items-center">Economics & Logistics <button class="info-btn" data-info="economics">i</button></h3>
+                 <div class="grid grid-cols-1 md:grid-cols-4 gap-6 text-center">
+                    <div><p class="font-semibold">Total Cost</p><p id="totalCost" class="text-3xl font-bold text-red-600">₱0</p></div>
+                    <div><p class="font-semibold">Total Revenue</p><p id="totalRevenue" class="text-3xl font-bold text-green-600">₱0</p></div>
+                    <div><p class="font-semibold">Net Profit/Loss</p><p id="netProfit" class="text-3xl font-bold text-gray-800">₱0</p></div>
+                    <div><p class="font-semibold">Time Elapsed</p><p id="totalTime" class="text-3xl font-bold text-indigo-600">0.00</p><span class="text-sm text-gray-500">Years</span></div>
+                 </div>
+                 <div class="mt-4 border-t border-gray-200 pt-4"><h4 class="font-semibold">Global Market Watch</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-2 p-4 bg-gray-50 rounded-lg">
+                        <div><p class="text-sm text-gray-500">U₃O₈ Spot Price/kg (USD)</p><div class="flex items-center justify-center"><p id="spotPriceUsd" class="text-2xl font-bold text-green-700">$220.00</p><span id="trendIconUsd" class="ml-2"></span></div></div>
+                        <div><p class="text-sm text-gray-500">U₃O₈ Spot Price/kg (PHP)</p><div class="flex items-center justify-center"><p id="spotPricePhp" class="text-2xl font-bold text-blue-700">₱12,760</p><span id="trendIconPhp" class="ml-2"></span></div></div>
+                        <div><p class="text-sm text-gray-500">Electricity Price/MW-Year</p><div class="flex items-center justify-center"><p id="electricityPrice" class="text-2xl font-bold text-purple-700">₱5.00M</p></div></div>
+                    </div>
+                 </div>
+            </div>
+            <div class="card rounded-xl p-6">
+                <h3 class="text-xl font-bold mb-4">☢️ Radioactivity Comparison</h3>
+                <p class="text-sm text-gray-500 mb-2">Approximate dose rates.</p>
+                <div class="space-y-2 text-sm">
+                    <p>🍌 Eating a Banana: ~0.1 μSv</p>
+                    <p>✈️ Flight (NY-LA): ~40 μSv</p>
+                    <p>☢️ LEU Fuel Pellet (contact): ~2 mSv/hr</p>
+                    <p>☢️ Spent Fuel (1 yr old, 3m): ~10 Sv/hr (Lethal)</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Global Map Section -->
+        <div class="card rounded-xl p-6">
+            <h3 class="text-xl font-bold mb-4">Global Nuclear Infrastructure</h3>
+            <p class="text-sm text-gray-600 mb-4">Locations of major uranium mines and enrichment facilities around the world.
+                <span class="font-semibold text-orange-600">⛏️ Mine</span> | <span class="font-semibold text-blue-600">⚛️ Enrichment</span>
+            </p>
+            <div id="map"></div>
+        </div>
+
+        <!-- Post-Generation Modules (Placeholder for future expansion) -->
+        <div class="card rounded-xl p-6">
+             <h3 class="text-xl font-bold mb-4">Advanced Modules (Future)</h3>
+             <p class="text-sm text-gray-600 mb-2">Future concepts like reprocessing and long-term waste storage would be managed here.</p>
+        </div>
+    </div>
+    
+    <!-- Info Modal -->
+    <div id="infoModal">
+        <div id="modalContent">
+            <div class="flex justify-between items-center mb-4">
+                <h2 id="modalTitle" class="text-2xl font-bold">Process Information</h2>
+                <button id="closeModalBtn" class="text-2xl font-bold">&times;</button>
+            </div>
+            <p id="modalText" class="text-gray-700"></p>
+        </div>
+    </div>
+    
+    <!-- Event Modal -->
+    <div id="eventModal">
+        <div id="eventModalContent">
+            <h2 id="eventTitle" class="text-2xl font-bold text-center mb-2">🌍 Geopolitical Event!</h2>
+            <p id="eventText" class="text-gray-700 text-center"></p>
+            <button id="closeEventBtn" class="btn btn-secondary w-full mt-4">Acknowledge</button>
+        </div>
+    </div>
+
+
+    <script>
+    // This script contains the entire logic for the Uranium Fuel Cycle Simulator.
+    document.addEventListener('DOMContentLoaded', () => {
+    
+        // --- STATE MANAGEMENT ---
+        let state, market, reactorState, summaryChartInstance;
+        let marketInterval, reactorInterval;
+        let isBusy = false; // Global lock to prevent overlapping actions
+    
+        // --- DOM ELEMENTS CACHE ---
+        const elements = {
+            // Buttons
+            resetBtn: document.getElementById('resetBtn'),
+            mineBtn: document.getElementById('mineBtn'),
+            millBtn: document.getElementById('millBtn'),
+            convertBtn: document.getElementById('convertBtn'),
+            enrichBtn: document.getElementById('enrichBtn'),
+            fabricateBtn: document.getElementById('fabricateBtn'),
+            fissionBtn: document.getElementById('fissionBtn'),
+            withdrawRodsBtn: document.getElementById('withdrawRodsBtn'),
+            insertRodsBtn: document.getElementById('insertRodsBtn'),
+            // Inputs
+            mineSlider: document.getElementById('mineSlider'),
+            mineSliderValue: document.getElementById('mineSliderValue'),
+            reactorChoice: document.getElementById('reactorChoice'),
+            enrichmentCard: document.getElementById('enrichmentCard'),
+            // Displays
+            oreAmount: document.getElementById('oreAmount'),
+            yellowcakeAmount: document.getElementById('yellowcakeAmount'),
+            uf6Amount: document.getElementById('uf6Amount'),
+            enrichedAmount: document.getElementById('enrichedAmount'),
+            depletedAmount: document.getElementById('depletedAmount'),
+            fabricatedFuelAmount: document.getElementById('fabricatedFuelAmount'),
+            spentFuelAmount: document.getElementById('spentFuelAmount'),
+            // Time/Message Displays
+            mineTime: document.getElementById('mineTime'),
+            millTime: document.getElementById('millTime'),
+            convertTime: document.getElementById('convertTime'),
+            enrichTime: document.getElementById('enrichTime'),
+            fabricateTime: document.getElementById('fabricateTime'),
+            reactorMessage: document.getElementById('reactorMessage'),
+            // Economics
+            totalCost: document.getElementById('totalCost'),
+            totalRevenue: document.getElementById('totalRevenue'),
+            netProfit: document.getElementById('netProfit'),
+            totalTime: document.getElementById('totalTime'),
+            spotPriceUsd: document.getElementById('spotPriceUsd'),
+            spotPricePhp: document.getElementById('spotPricePhp'),
+            trendIconUsd: document.getElementById('trendIconUsd'),
+            trendIconPhp: document.getElementById('trendIconPhp'),
+            electricityPrice: document.getElementById('electricityPrice'),
+            // Reactor Controls
+            rod1: document.getElementById('rod1'),
+            rod2: document.getElementById('rod2'),
+            rod3: document.getElementById('rod3'),
+            rodPositionDisplay: document.getElementById('rodPositionDisplay'),
+            powerLevelBar: document.getElementById('powerLevelBar'),
+            powerOutputDisplay: document.getElementById('powerOutputDisplay'),
+            reactorStatusDisplay: document.getElementById('reactorStatusDisplay'),
+            // Modals
+            infoModal: document.getElementById('infoModal'),
+            modalTitle: document.getElementById('modalTitle'),
+            modalText: document.getElementById('modalText'),
+            closeModalBtn: document.getElementById('closeModalBtn'),
+            eventModal: document.getElementById('eventModal'),
+            eventTitle: document.getElementById('eventTitle'),
+            eventText: document.getElementById('eventText'),
+            closeEventBtn: document.getElementById('closeEventBtn'),
+            // Animations & Charts
+            fissionContainer: document.getElementById('fissionContainer'),
+            centrifugeContainer: document.getElementById('centrifugeContainer'),
+            centrifugeRotor: document.getElementById('centrifugeRotor'),
+            summaryChart: document.getElementById('summaryChart').getContext('2d'),
+            summaryContent: document.getElementById('summaryContent'),
+            map: document.getElementById('map'),
+        };
+    
+        // --- CONSTANTS AND CONFIGURATION ---
+        const C = {
+            ORE_CONCENTRATION: 0.002, // 0.2% U3O8 in ore
+            YELLOWCAKE_TO_UF6_RATIO: 1.18,
+            U_IN_UF6_RATIO: 0.676,
+            NATURAL_U235_ASSAY: 0.00711,
+            TAILS_ASSAY: 0.0025,
+            REACTOR_ASSAYS: { LWR: 0.045, RBMK: 0.02, CANDU: 0.00711 },
+            // Costs (in PHP)
+            COST_PER_TON_ORE: 2500,
+            COST_PER_TON_MILL: 5000,
+            COST_PER_TON_CONVERT: 500000,
+            COST_PER_TON_ENRICH: 7500000,
+            COST_PER_TON_FABRICATE: 15000000,
+            // Time (in years)
+            TIME_PER_100K_TONS_MINE: 0.2,
+            TIME_PER_100K_TONS_MILL: 0.1,
+            TIME_PER_100_TONS_CONVERT: 0.1,
+            TIME_PER_100_TONS_ENRICH: 0.25,
+            TIME_PER_10_TONS_FABRICATE: 0.1,
+            // Reactor
+            FUEL_TO_POWER_MW_YEARS_PER_TON: { LWR: 40, CANDU: 7.5, RBMK: 20 },
+            REACTOR_CAPACITY_MW: 1000,
+            USD_TO_PHP: 58.00,
+        };
+        
+        const INFO_CONTENT = {
+            mining: "Uranium ore is extracted from the ground, often through open-pit or underground mining. The ore typically contains a very low concentration of uranium (e.g., 0.1% to 2%).",
+            milling: "At a mill, the mined ore is crushed and leached with acid to extract the uranium, producing a concentrate known as 'yellowcake' (U₃O₈).",
+            conversion: "The solid yellowcake is converted into uranium hexafluoride (UF₆) gas, the form necessary for the enrichment process.",
+            enrichment: "This process increases the concentration of the fissile U-235 isotope from its natural level (~0.7%) to reactor-grade levels (3-5% for LWRs). This is most often done using gas centrifuges. CANDU reactors do not require this step.",
+            fabrication: "The enriched (or natural, for CANDU) UF₆ is converted back into uranium dioxide (UO₂) powder, which is then pressed into small ceramic pellets and sealed in metal tubes to form fuel assemblies.",
+            fission: "Inside the reactor, neutrons strike U-235 atoms, causing them to split (fission). This releases a tremendous amount of energy as heat, along with more neutrons, creating a self-sustaining chain reaction. The heat is used to boil water, create steam, and turn turbines to generate electricity.",
+            stockpiles: "Enriched Uranium is the reactor fuel. Depleted Uranium (tails), mostly U-238, is a byproduct of enrichment. Spent fuel is the highly radioactive material removed from the reactor after its use.",
+            economics: "The simulation tracks costs for each step and revenue from electricity generation. Net profit is revenue minus costs. Market prices fluctuate, impacting profitability.",
+        };
+        
+        const GEOPOLITICAL_EVENTS = [
+            { text: "A major mining country experiences political instability, causing U₃O₈ spot prices to spike by 30%!", effect: market => market.spotPriceUsd *= 1.3 },
+            { text: "Technological advancements in enrichment reduce SWU costs. Enrichment costs decrease by 20%.", effect: () => C.COST_PER_TON_ENRICH *= 0.8 },
+            { text: "A global energy crisis increases demand for electricity. Revenue per MW-year jumps by 25%!", effect: market => market.electricityPrice *= 1.25 },
+            { text: "New international regulations on nuclear safety increase operating costs for all facilities by 10%.", effect: () => { for(const key in C) if(key.startsWith('COST_')) C[key] *= 1.1; } },
+            { text: "A new large-scale uranium deposit is discovered, temporarily crashing the spot price by 20%.", effect: market => market.spotPriceUsd *= 0.8 },
+        ];
+    
+        // --- DEFAULT STATES ---
+        const getDefaultState = () => ({
+            reactorType: 'LWR', ore: 0, yellowcake: 0, uf6: 0, enriched: 0,
+            depleted: 0, fabricatedFuel: 0, spentFuel: 0,
+            cost: 0, revenue: 0, time: 0,
+        });
+    
+        const getDefaultMarket = () => ({
+            spotPriceUsd: 220, electricityPrice: 5000000, trend: 0,
+        });
+    
+        const getDefaultReactorState = () => ({
+            status: 'Shutdown', fuelLoaded: 0, fuelConsumed: 0,
+            rodPosition: 0, // 0 = fully in, 100 = fully out
+            powerOutput: 0,
+        });
+    
+        // --- UTILITY FUNCTIONS ---
+        const formatNumber = (num, dec = 2) => num.toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+        const formatCurrency = (num) => {
+            if (Math.abs(num) >= 1000000) {
+                return `₱${formatNumber(num / 1000000, 2)}M`;
+            }
+            return `₱${formatNumber(num, 0)}`;
+        };
+        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+        const showMessage = async (el, text, duration = 3000) => {
+            el.textContent = text;
+            if (duration > 0) {
+                await sleep(duration);
+                el.textContent = '';
+            }
+        };
+    
+        // --- UI UPDATE FUNCTIONS ---
+        const updateAllUI = () => {
+            // Update resource displays
+            elements.oreAmount.textContent = `${formatNumber(state.ore, 0)} tons`;
+            elements.yellowcakeAmount.textContent = `${formatNumber(state.yellowcake, 0)} tons`;
+            elements.uf6Amount.textContent = `${formatNumber(state.uf6)} tons`;
+            elements.enrichedAmount.textContent = `${formatNumber(state.enriched)} tons`;
+            elements.depletedAmount.textContent = `${formatNumber(state.depleted)} tons`;
+            elements.fabricatedFuelAmount.textContent = `${formatNumber(state.fabricatedFuel)} tons`;
+            elements.spentFuelAmount.textContent = `${formatNumber(state.spentFuel)} tons`;
+            
+            // Update economics
+            elements.totalCost.textContent = formatCurrency(state.cost);
+            elements.totalRevenue.textContent = formatCurrency(state.revenue);
+            const net = state.revenue - state.cost;
+            elements.netProfit.textContent = formatCurrency(net);
+            elements.netProfit.className = 'text-3xl font-bold ' + (net >= 0 ? 'text-green-600' : 'text-red-600');
+            elements.totalTime.textContent = formatNumber(state.time);
+            
+            // Update market
+            elements.spotPriceUsd.textContent = `$${formatNumber(market.spotPriceUsd)}`;
+            elements.spotPricePhp.textContent = `₱${formatNumber(market.spotPriceUsd * C.USD_TO_PHP)}`;
+            elements.electricityPrice.textContent = formatCurrency(market.electricityPrice);
+            
+            const trendArrow = val => val > 0 ? '▲' : '▼';
+            const trendColor = val => val > 0 ? 'text-green-500' : 'text-red-500';
+            elements.trendIconUsd.innerHTML = `<span class="${trendColor(market.trend)}">${trendArrow(market.trend)}</span>`;
+            elements.trendIconPhp.innerHTML = `<span class="${trendColor(market.trend)}">${trendArrow(market.trend)}</span>`;
+            
+            // Update reactor controls
+            elements.reactorStatusDisplay.textContent = reactorState.status;
+            elements.reactorStatusDisplay.className = 'font-bold ' + 
+                (reactorState.status === 'Running' ? 'text-green-600' : 
+                 reactorState.status === 'SCRAM' ? 'text-red-600' : 'text-blue-600');
+            elements.rodPositionDisplay.textContent = `${reactorState.rodPosition}%`;
+            [elements.rod1, elements.rod2, elements.rod3].forEach(rod => {
+                rod.style.transform = `translateY(${(100 - reactorState.rodPosition)}%)`;
+            });
+            elements.powerOutputDisplay.textContent = `${formatNumber(reactorState.powerOutput, 0)} MW`;
+            const powerPercent = reactorState.powerOutput / C.REACTOR_CAPACITY_MW * 100;
+            elements.powerLevelBar.style.width = `${powerPercent}%`;
+            
+            // Update button states
+            elements.millBtn.disabled = isBusy || state.ore <= 0;
+            elements.convertBtn.disabled = isBusy || state.yellowcake <= 0;
+            elements.enrichBtn.disabled = isBusy || state.uf6 <= 0 || state.reactorType === 'CANDU';
+            elements.fabricateBtn.disabled = isBusy || (state.reactorType === 'CANDU' ? state.uf6 <= 0 : state.enriched <= 0);
+            elements.fissionBtn.disabled = isBusy || state.fabricatedFuel <= 0 || reactorState.status !== 'Shutdown';
+            
+            updateChart();
+            updateSummaryContent();
+        };
+        
+        const updateSummaryContent = () => {
+            if (state.time === 0) {
+                 elements.summaryContent.innerHTML = `<p class="text-center text-gray-500">No production yet. Start by mining ore.</p>`;
+                 return;
+            }
+            const MWh = state.revenue / market.electricityPrice * C.REACTOR_CAPACITY_MW * 8760; // 8760 hours/year
+            const homesPowered = MWh / 10; // Avg US home uses ~10 MWh/year
+            
+            elements.summaryContent.innerHTML = `
+                <div class="space-y-2 text-center md:text-left">
+                    <p><strong>Total Time:</strong> ${formatNumber(state.time)} years</p>
+                    <p><strong>Total Cost:</strong> ${formatCurrency(state.cost)}</p>
+                    <p><strong>Total Revenue:</strong> ${formatCurrency(state.revenue)}</p>
+                    <p><strong>Total Electricity Generated:</strong> ${formatNumber(MWh, 0)} MWh</p>
+                    <p class="text-lg">This could power approx. <strong class="text-amber-600">${formatNumber(homesPowered, 0)}</strong> homes for one year.</p>
+                </div>
+            `;
+        };
+        
+        // --- CHART & MAP ---
+        const initChart = () => {
+            if (summaryChartInstance) summaryChartInstance.destroy();
+            summaryChartInstance = new Chart(elements.summaryChart, {
+                type: 'bar',
+                data: {
+                    labels: ['Ore', 'Yellowcake', 'UF₆', 'Enriched Fuel', 'Fabricated', 'Spent Fuel'],
+                    datasets: [{
+                        label: 'Amount (tons)',
+                        data: [0,0,0,0,0,0],
+                        backgroundColor: ['#ca8a04', '#f59e0b', '#d1d5db', '#10b981', '#6366f1', '#a855f7'],
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: { y: { beginAtZero: true, type: 'logarithmic' } },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        };
+        
+        const updateChart = () => {
+            const chartData = [
+                state.ore, state.yellowcake, state.uf6, 
+                state.enriched, state.fabricatedFuel, state.spentFuel
+            ].map(v => v > 0 ? v : 0.01); // Use small value for log scale
+            
+            if (summaryChartInstance) {
+                summaryChartInstance.data.datasets[0].data = chartData;
+                summaryChartInstance.update();
+            }
+        };
+        
+        const initMap = () => {
+            const map = L.map(elements.map).setView([20, 0], 2);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+
+            const mineIcon = L.divIcon({className: 'text-orange-600 text-2xl', html: '⛏️'});
+            const enrichIcon = L.divIcon({className: 'text-blue-600 text-2xl', html: '⚛️'});
+
+            // Data from World Nuclear Association
+            const mines = [
+                { lat: 49.8, lon: -105.0, name: "McArthur River/Key Lake (Canada)" },
+                { lat: 58.2, lon: -103.7, name: "Cigar Lake (Canada)" },
+                { lat: 50.7, lon: 69.4, name: "Inkai (Kazakhstan)" },
+                { lat: -22.4, lon: 15.2, name: "Husab (Namibia)" },
+                { lat: -23.6, lon: 134.4, name: "Olympic Dam (Australia)" },
+            ];
+            const enrichmentFacilities = [
+                { lat: 51.7, lon: -1.3, name: "Urenco (Capenhurst, UK)" },
+                { lat: 51.9, lon: 5.9, name: "Urenco (Almelo, Netherlands)" },
+                { lat: 44.6, lon: 4.7, name: "Orano (Tricastin, France)" },
+                { lat: 35.8, lon: -84.3, name: "URENCO USA (Eunice, NM, USA)" },
+                { lat: 56.2, lon: 91.5, name: "Rosatom (Zelenogorsk, Russia)" },
+            ];
+
+            mines.forEach(m => L.marker([m.lat, m.lon], {icon: mineIcon}).addTo(map).bindPopup(m.name));
+            enrichmentFacilities.forEach(e => L.marker([e.lat, e.lon], {icon: enrichIcon}).addTo(map).bindPopup(e.name));
+        };
+        
+        // --- ANIMATIONS ---
+        const playFissionAnimation = async () => {
+            const container = elements.fissionContainer;
+            container.innerHTML = '<div class="nucleus"></div>';
+            const nucleus = container.querySelector('.nucleus');
+            
+            await sleep(100); // Let nucleus appear
+            
+            const neutron = document.createElement('div');
+            neutron.className = 'neutron';
+            container.appendChild(neutron);
+            
+            await sleep(10);
+            neutron.style.left = 'calc(50% - 15px)';
+            
+            await sleep(1000);
+            nucleus.classList.add('impact');
+            container.removeChild(neutron);
+            
+            await sleep(200);
+            nucleus.classList.add('fissioned');
+            
+            const energy = document.createElement('div');
+            energy.className = 'energy-wave';
+            container.appendChild(energy);
+            energy.classList.add('expand');
+            
+            for (let i = 0; i < 3; i++) {
+                const fragment = document.createElement('div');
+                fragment.className = 'fragment';
+                container.appendChild(fragment);
+                const angle = Math.random() * 2 * Math.PI;
+                const dist = 50 + Math.random() * 20;
+                await sleep(10);
+                fragment.style.transform = `translate(-50%, -50%) translate(${Math.cos(angle) * dist}px, ${Math.sin(angle) * dist}px) scale(0)`;
+                fragment.style.opacity = '0';
+            }
+        };
+
+        const playCentrifugeAnimation = async (duration) => {
+            elements.centrifugeRotor.style.display = 'block';
+            const container = elements.centrifugeContainer;
+            
+            let particles = [];
+            for (let i = 0; i < 20; i++) {
+                const p = document.createElement('div');
+                p.className = `isotope-particle ${Math.random() < C.NATURAL_U235_ASSAY / 0.01 ? 'u235' : 'u238'}`;
+                container.appendChild(p);
+                particles.push(p);
+            }
+            
+            await sleep(100);
+            
+            particles.forEach(p => {
+                const isU235 = p.classList.contains('u235');
+                const angle = Math.random() * 2 * Math.PI;
+                // Lighter U-235 stays closer to center, heavier U-238 moves to edge
+                const radius = isU235 ? Math.random() * 20 + 5 : Math.random() * 15 + 40;
+                p.style.transform = `translate(-50%, -50%) translate(${Math.cos(angle) * radius}px, ${Math.sin(angle) * radius}px)`;
+            });
+            
+            await sleep(duration);
+            elements.centrifugeRotor.style.display = 'none';
+            container.innerHTML = '<div id="centrifugeRotor" style="display: none;"></div>'; // Clean up
+            // Re-cache rotor
+            elements.centrifugeRotor = document.getElementById('centrifugeRotor');
+        };
+
+        // --- CORE LOGIC ---
+        const runProcess = async (
+            duration, cost, output, timeMsgEl, 
+            inputAmount, inputResource, outputResource, 
+            outputAmount, secondaryOutputResource, secondaryOutputAmount
+        ) => {
+            if (isBusy) return;
+            isBusy = true;
+            updateAllUI();
+        
+            showMessage(timeMsgEl, `Processing... Est. time: ${formatNumber(duration)} years`);
+            const animDuration = Math.min(duration * 1000, 3000);
+            await sleep(animDuration);
+        
+            state[inputResource] -= inputAmount;
+            state[outputResource] += outputAmount;
+            if (secondaryOutputResource) {
+                state[secondaryOutputResource] += secondaryOutputAmount;
+            }
+            state.cost += cost;
+            state.time += duration;
+        
+            isBusy = false;
+            showMessage(timeMsgEl, `Completed in ${formatNumber(duration)} years.`, 2000);
+            updateAllUI();
+        };
+
+        const mineOre = async () => {
+            if (isBusy) return;
+            isBusy = true;
+            updateAllUI();
+            
+            const amount = parseFloat(elements.mineSlider.value);
+            const duration = (amount / 100000) * C.TIME_PER_100K_TONS_MINE;
+            const cost = amount * C.COST_PER_TON_ORE;
+            
+            await showMessage(elements.mineTime, `Mining... Est. time: ${formatNumber(duration)} years`, 1500);
+            
+            state.ore += amount;
+            state.cost += cost;
+            state.time += duration;
+            
+            isBusy = false;
+            showMessage(elements.mineTime, `Mined ${formatNumber(amount, 0)} tons.`, 2000);
+            updateAllUI();
+        };
+        
+        const millOre = async () => {
+            const oreToProcess = state.ore;
+            if (oreToProcess <= 0) return;
+            
+            const yellowcakeProduced = oreToProcess * C.ORE_CONCENTRATION;
+            const duration = (oreToProcess / 100000) * C.TIME_PER_100K_TONS_MILL;
+            const cost = oreToProcess * C.COST_PER_TON_MILL;
+            
+            await runProcess(duration, cost, yellowcakeProduced, elements.millTime, oreToProcess, 'ore', 'yellowcake', yellowcakeProduced);
+        };
+        
+        const convertYellowcake = async () => {
+            const ycToConvert = state.yellowcake;
+            if (ycToConvert <= 0) return;
+            
+            const uf6Produced = ycToConvert * C.YELLOWCAKE_TO_UF6_RATIO;
+            const duration = (ycToConvert / 100) * C.TIME_PER_100_TONS_CONVERT;
+            const cost = ycToConvert * C.COST_PER_TON_CONVERT;
+            
+            await runProcess(duration, cost, uf6Produced, elements.convertTime, ycToConvert, 'yellowcake', 'uf6', uf6Produced);
+        };
+        
+        const enrichUranium = async () => {
+            const uf6ToEnrich = state.uf6;
+            if (uf6ToEnrich <= 0 || state.reactorType === 'CANDU') return;
+            
+            const productAssay = C.REACTOR_ASSAYS[state.reactorType];
+            const feedAssay = C.NATURAL_U235_ASSAY;
+            const tailsAssay = C.TAILS_ASSAY;
+            
+            // Mass balance equations
+            const feedUranium = uf6ToEnrich * C.U_IN_UF6_RATIO;
+            const productToFeedRatio = (feedAssay - tailsAssay) / (productAssay - tailsAssay);
+            const enrichedUranium = feedUranium * productToFeedRatio;
+            const depletedUranium = feedUranium - enrichedUranium;
+            
+            const duration = (uf6ToEnrich / 100) * C.TIME_PER_100_TONS_ENRICH;
+            const cost = uf6ToEnrich * C.COST_PER_TON_ENRICH;
+            
+            if (isBusy) return;
+            isBusy = true;
+            updateAllUI();
+        
+            showMessage(elements.enrichTime, `Enriching... Est. time: ${formatNumber(duration)} years`);
+            const animDuration = Math.min(duration * 2000, 4000);
+            await playCentrifugeAnimation(animDuration);
+        
+            state.uf6 -= uf6ToEnrich;
+            state.enriched += enrichedUranium / C.U_IN_UF6_RATIO; // convert back to UF6 mass for simplicity
+            state.depleted += depletedUranium / C.U_IN_UF6_RATIO;
+            state.cost += cost;
+            state.time += duration;
+        
+            isBusy = false;
+            showMessage(elements.enrichTime, `Completed in ${formatNumber(duration)} years.`, 2000);
+            updateAllUI();
+        };
+
+        const fabricateFuel = async () => {
+            const isCandu = state.reactorType === 'CANDU';
+            const materialAvailable = isCandu ? state.uf6 : state.enriched;
+            if (materialAvailable <= 0) return;
+            
+            const fuelFabricated = materialAvailable; // Assume 1:1 conversion for simplicity
+            const duration = (fuelFabricated / 10) * C.TIME_PER_10_TONS_FABRICATE;
+            const cost = fuelFabricated * C.COST_PER_TON_FABRICATE;
+            
+            const inputResource = isCandu ? 'uf6' : 'enriched';
+            await runProcess(duration, cost, fuelFabricated, elements.fabricateTime, materialAvailable, inputResource, 'fabricatedFuel', fuelFabricated);
+        };
+        
+        const startReactor = async () => {
+            if (state.fabricatedFuel <= 0 || reactorState.status !== 'Shutdown') return;
+            
+            const fuelToLoad = Math.min(state.fabricatedFuel, 100); // Load up to 100 tons
+            state.fabricatedFuel -= fuelToLoad;
+            reactorState.fuelLoaded += fuelToLoad;
+            
+            reactorState.status = 'Running';
+            await showMessage(elements.reactorMessage, `Loading ${formatNumber(fuelToLoad,0)} tons of fuel... Reactor starting up!`, 2000);
+            
+            playFissionAnimation();
+            
+            if (!reactorInterval) {
+                reactorInterval = setInterval(reactorLoop, 1000);
+            }
+            updateAllUI();
+        };
+        
+        const reactorLoop = () => {
+            if (reactorState.status !== 'Running') return;
+            
+            // Power is proportional to rod position and fuel availability
+            const powerRatio = reactorState.rodPosition / 100;
+            const potentialPower = C.REACTOR_CAPACITY_MW * powerRatio;
+            reactorState.powerOutput = potentialPower;
+            
+            const yearlyFuelConsumption = C.REACTOR_CAPACITY_MW / C.FUEL_TO_POWER_MW_YEARS_PER_TON[state.reactorType];
+            const fuelConsumedThisTick = (yearlyFuelConsumption / 365) * powerRatio; // Consumption per day (1s=1day)
+            
+            if (reactorState.fuelLoaded > reactorState.fuelConsumed + fuelConsumedThisTick) {
+                reactorState.fuelConsumed += fuelConsumedThisTick;
+                state.spentFuel += fuelConsumedThisTick;
+                
+                const revenueThisTick = (market.electricityPrice / 365) * powerRatio;
+                state.revenue += revenueThisTick;
+                state.time += 1/365;
+            } else {
+                reactorState.status = 'Shutdown';
+                reactorState.powerOutput = 0;
+                reactorState.rodPosition = 0;
+                showMessage(elements.reactorMessage, 'Reactor shutdown: Fuel depleted.', 5000);
+                clearInterval(reactorInterval);
+                reactorInterval = null;
+            }
+            updateAllUI();
+        };
+        
+        const handleRodMovement = (direction) => {
+            if (reactorState.status !== 'Running') return;
+            
+            const change = direction === 'withdraw' ? 10 : -10;
+            reactorState.rodPosition = Math.max(0, Math.min(100, reactorState.rodPosition + change));
+            
+            // RBMK positive void coefficient simulation
+            if(state.reactorType === 'RBMK' && reactorState.rodPosition < 20) {
+                 reactorState.powerOutput *= 1.5; // Unstable power surge at low rod positions
+                 showMessage(elements.reactorMessage, 'WARNING: RBMK unstable at low power!', 3000);
+            }
+            
+            updateAllUI();
+        };
+        
+        // --- MARKET SIMULATION ---
+        const marketLoop = () => {
+            const change = (Math.random() - 0.49) * 10; // Fluctuation
+            market.spotPriceUsd = Math.max(50, market.spotPriceUsd + change);
+            market.trend = change;
+            
+            // Randomly trigger an event
+            if(Math.random() < 0.05) { // 5% chance every 5 seconds
+                triggerRandomEvent();
+            }
+            
+            updateAllUI();
+        };
+        
+        // --- EVENT HANDLING & MODALS ---
+        const setupEventListeners = () => {
+            elements.resetBtn.addEventListener('click', resetSimulation);
+            elements.mineSlider.addEventListener('input', () => {
+                elements.mineSliderValue.textContent = formatNumber(elements.mineSlider.value, 0);
+            });
+            elements.mineBtn.addEventListener('click', mineOre);
+            elements.millBtn.addEventListener('click', millOre);
+            elements.convertBtn.addEventListener('click', convertYellowcake);
+            elements.enrichBtn.addEventListener('click', enrichUranium);
+            elements.fabricateBtn.addEventListener('click', fabricateFuel);
+            elements.fissionBtn.addEventListener('click', startReactor);
+            elements.withdrawRodsBtn.addEventListener('click', () => handleRodMovement('withdraw'));
+            elements.insertRodsBtn.addEventListener('click', () => handleRodMovement('insert'));
+            
+            elements.reactorChoice.addEventListener('change', handleReactorTypeChange);
+            
+            document.body.addEventListener('click', e => {
+                if(e.target.classList.contains('info-btn')) {
+                    showInfoModal(e.target.dataset.info);
+                }
+            });
+            
+            elements.closeModalBtn.addEventListener('click', () => elements.infoModal.classList.remove('visible'));
+            elements.closeEventBtn.addEventListener('click', () => elements.eventModal.classList.remove('visible'));
+        };
+        
+        const handleReactorTypeChange = () => {
+            const selected = document.querySelector('input[name="reactorType"]:checked').value;
+            state.reactorType = selected;
+            if (selected === 'CANDU') {
+                elements.enrichmentCard.classList.add('opacity-50');
+            } else {
+                elements.enrichmentCard.classList.remove('opacity-50');
+            }
+            updateAllUI();
+        };
+        
+        const showInfoModal = (topic) => {
+            elements.modalTitle.textContent = topic.charAt(0).toUpperCase() + topic.slice(1);
+            elements.modalText.textContent = INFO_CONTENT[topic] || "No information available.";
+            elements.infoModal.classList.add('visible');
+        };
+        
+        const triggerRandomEvent = () => {
+            if (elements.eventModal.classList.contains('visible')) return; // Don't stack events
+            
+            const event = GEOPOLITICAL_EVENTS[Math.floor(Math.random() * GEOPOLITICAL_EVENTS.length)];
+            elements.eventText.textContent = event.text;
+            event.effect(market);
+            elements.eventModal.classList.add('visible');
+            updateAllUI();
+        };
+        
+        // --- INITIALIZATION ---
+        const resetSimulation = () => {
+            isBusy = false;
+            if (marketInterval) clearInterval(marketInterval);
+            if (reactorInterval) clearInterval(reactorInterval);
+            marketInterval = reactorInterval = null;
+            
+            state = getDefaultState();
+            market = getDefaultMarket();
+            reactorState = getDefaultReactorState();
+            
+            handleReactorTypeChange(); // Set initial reactor type UI
+            initChart();
+            updateAllUI();
+            
+            marketInterval = setInterval(marketLoop, 5000);
+        };
+    
+        const init = () => {
+            setupEventListeners();
+            initMap();
+            resetSimulation();
+        };
+    
+        init(); // Start the simulation
+    });
+    </script>
+</body>
+</html>
+
